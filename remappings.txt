@@ -1,0 +1,3 @@
+@chainlink=lib/chainlink/contracts/src
+@openzeppelin=lib/openzeppelin-contracts/contracts
+@erc1363=lib/erc1363-payable-token/contracts
