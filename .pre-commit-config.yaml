@@ -1,0 +1,13 @@
+repos:
+-   repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v2.3.0
+    hooks:
+    -   id: check-yaml
+    -   id: end-of-file-fixer
+    -   id: trailing-whitespace
+repos:
+    - repo: https://github.com/0xYYY/foundry-pre-commit
+      rev: v1.0.0
+      hooks:
+          - id: format
+          - id: snapshot
