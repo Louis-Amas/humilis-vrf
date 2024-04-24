@@ -20,7 +20,7 @@ contract VRFCoordinatorTest is Test {
 
   function setUp() public {
     feeToken = IERC1363(address(new ERC1363Mock("Test", "TST")));
-    coordinator = new VRFCoordinator(publicKey, feeToken);
+    coordinator = new VRFCoordinator(publicKey, feeToken, 100);
   }
 
   function createSubscription() public {

@@ -3,18 +3,27 @@ pragma solidity ^0.8.13;
 import {VRFCoordinatorV2Interface} from "@chainlink/v0.8/vrf/interfaces/VRFCoordinatorV2Interface.sol";
 import "@openzeppelin/interfaces/IERC1363.sol";
 import "@openzeppelin/interfaces/IERC1363Receiver.sol";
+import "@chainlink/v0.8/vrf/VRFConsumerBaseV2.sol";
+
+import "./Utils.sol";
 
 import {VRF} from "./VRF.sol";
 
 contract VRFCoordinator is VRFCoordinatorV2Interface, IERC1363Receiver {
-  IERC1363 feeToken;
+  IERC1363 public feeToken;
   uint[2] public publicKey;
+  uint public gasPriceMwei;
+  uint64 public globalSubId = 0;
 
-  uint64 globalSubId = 0;
+  error RandomRequestAlreadyFulfilled(uint requestId);
+  error ProofInvalid();
+  error RequestIdInvalid();
+  error CallReverted();
 
-  constructor(uint[2] memory _publicKey, IERC1363 _feeToken) {
+  constructor(uint[2] memory _publicKey, IERC1363 _feeToken, uint _gasPriceMwei) {
     publicKey = _publicKey;
     feeToken = _feeToken;
+    gasPriceMwei = _gasPriceMwei;
   }
 
   struct Subscription {
@@ -58,10 +67,6 @@ contract VRFCoordinator is VRFCoordinatorV2Interface, IERC1363Receiver {
 
   function getRequestConfig() external view returns (uint16, uint32, bytes32[] memory) {
     return (0, 0, new bytes32[](0));
-  }
-
-  function getRequest(uint requestId) public view returns (RandomRequest memory) {
-    return requests[requestId].request;
   }
 
   event RandomWordsRequested(RandomRequest request);
@@ -142,7 +147,10 @@ contract VRFCoordinator is VRFCoordinatorV2Interface, IERC1363Receiver {
     return false;
   }
 
-  function onTransferReceived(address operator, address from, uint amount, bytes memory data) external returns (bytes4) {
+  function onTransferReceived(address, /*operator*/ address, /*from*/ uint amount, bytes memory data)
+    external
+    returns (bytes4)
+  {
     uint64 subId = abi.decode(data, (uint64));
     Subscription storage sub = subscriptions[subId];
     sub.balance += uint96(amount);
@@ -151,11 +159,46 @@ contract VRFCoordinator is VRFCoordinatorV2Interface, IERC1363Receiver {
   }
 
   function verifyRandomProof(uint[4] memory proof, uint requestId) public {
-    uint recoverRequestId = computeRequestId(getRequest(requestId));
-    require(recoverRequestId == requestId, "Invalid requestId");
+    RequestDetails storage requestDetails = requests[requestId];
+    if (requestDetails.fullfilled) {
+      revert RandomRequestAlreadyFulfilled(requestId);
+    }
 
-    require(VRF.verify(publicKey, proof, abi.encodePacked(requestId)), "Proof is not valid");
+    uint recoverRequestId = computeRequestId(requestDetails.request);
+    if (recoverRequestId != requestId) {
+      revert RequestIdInvalid();
+    }
 
-    // uint randomNumber = keccak256(abi.encode(proof[0], proof[1]));
+    if (!VRF.verify(publicKey, proof, abi.encodePacked(requestId))) {
+      revert ProofInvalid();
+    }
+
+    requestDetails.fullfilled = true;
+  }
+
+  function fullfillRandomness(uint[4] memory proof, uint requestId) public {
+    verifyRandomProof(proof, requestId);
+
+    uint randomness = uint(keccak256(abi.encode(proof[0], proof[1])));
+    uint[] memory array = new uint[](1);
+    array[0] = randomness;
+
+    VRFConsumerBaseV2 requestor = VRFConsumerBaseV2(requests[requestId].request.sender);
+
+    uint gasBeforeCall = gasleft();
+    (bool success,) = Utils.controlledCall(
+      address(requestor),
+      requests[requestId].request.callbackGasLimit,
+      abi.encodeCall(requestor.rawFulfillRandomWords, (requestId, array))
+    );
+    uint gasSpent = gasBeforeCall - gasleft();
+
+    if (!success) {
+      revert CallReverted();
+    }
+
+    Subscription storage sub = subscriptions[requests[requestId].request.subId];
+
+    sub.balance -= uint96(gasSpent * (gasPriceMwei * 10 ** 6)); // assuming feeToken is gasToken
   }
 }
