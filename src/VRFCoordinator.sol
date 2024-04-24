@@ -5,6 +5,8 @@ import "@openzeppelin/interfaces/IERC1363.sol";
 import "@openzeppelin/interfaces/IERC1363Receiver.sol";
 import "@chainlink/v0.8/vrf/VRFConsumerBaseV2.sol";
 
+import "forge-std/console.sol";
+
 import "./Utils.sol";
 
 import {VRF} from "./VRF.sol";
@@ -19,6 +21,10 @@ contract VRFCoordinator is VRFCoordinatorV2Interface, IERC1363Receiver {
   error ProofInvalid();
   error RequestIdInvalid();
   error CallReverted();
+  error NotAConsumer();
+  error SubscriptionInvalid();
+  error minimumRequestConfirmationsToBig();
+  error tooMuchWords();
 
   constructor(uint[2] memory _publicKey, IERC1363 _feeToken, uint _gasPriceMwei) {
     publicKey = _publicKey;
@@ -30,7 +36,6 @@ contract VRFCoordinator is VRFCoordinatorV2Interface, IERC1363Receiver {
     uint96 balance;
     uint64 reqCount;
     address owner;
-    address[] consumers;
   }
 
   struct RandomRequest {
@@ -48,6 +53,7 @@ contract VRFCoordinator is VRFCoordinatorV2Interface, IERC1363Receiver {
   }
 
   mapping(uint64 => Subscription) public subscriptions;
+  mapping(uint => mapping(address => bool)) public consumers;
   mapping(uint => RequestDetails) public requests;
 
   function computeRequestId(RandomRequest memory request) public pure returns (uint) {
@@ -79,9 +85,22 @@ contract VRFCoordinator is VRFCoordinatorV2Interface, IERC1363Receiver {
     uint32 numWords
   ) external returns (uint requestId) {
     Subscription storage sub = subscriptions[subId];
-    require(sub.owner == msg.sender, "Subscription doesn't exist or you don't own it");
-    require(minimumRequestConfirmations < 128, "Max 128 block");
-    require(numWords == 1, "Max 1 words");
+
+    if (sub.owner == address(0)) {
+      revert SubscriptionInvalid();
+    }
+
+    if (consumers[subId][msg.sender] != true) {
+      revert NotAConsumer();
+    }
+
+    if (minimumRequestConfirmations > 128) {
+      revert minimumRequestConfirmationsToBig();
+    }
+
+    if (numWords != 1) {
+      revert tooMuchWords();
+    }
 
     sub.reqCount++;
 
@@ -102,10 +121,10 @@ contract VRFCoordinator is VRFCoordinatorV2Interface, IERC1363Receiver {
   function getSubscription(uint64 subId)
     external
     view
-    returns (uint96 balance, uint64 reqCount, address owner, address[] memory consumers)
+    returns (uint96 balance, uint64 reqCount, address owner, address[] memory)
   {
     Subscription storage sub = subscriptions[subId];
-    return (sub.balance, sub.reqCount, sub.owner, sub.consumers);
+    return (sub.balance, sub.reqCount, sub.owner, new address[](0));
   }
 
   function requestSubscriptionOwnerTransfer(uint64, /*subId*/ address /*newOwner*/ ) external {
@@ -116,25 +135,17 @@ contract VRFCoordinator is VRFCoordinatorV2Interface, IERC1363Receiver {
     revert("not implemented");
   }
 
-  function addConsumer(uint64 subId, address consumer) external {
+  modifier isSubscriptionOwner(uint64 subId) {
     require(subscriptions[subId].owner == msg.sender, "Only the owner can add a consumer");
-    subscriptions[subId].consumers.push(consumer);
+    _;
   }
 
-  function removeConsumer(uint64 subId, address consumer) external {
-    Subscription storage sub = subscriptions[subId];
+  function addConsumer(uint64 subId, address consumer) external isSubscriptionOwner(subId) {
+    consumers[subId][consumer] = true;
+  }
 
-    if (sub.consumers.length == 0) {
-      return;
-    }
-
-    for (uint64 i = 0; i < sub.consumers.length; ++i) {
-      if (sub.consumers[i] == consumer) {
-        sub.consumers[i] = sub.consumers[sub.consumers.length - 1];
-        sub.consumers.pop();
-        return;
-      }
-    }
+  function removeConsumer(uint64 subId, address consumer) external isSubscriptionOwner(subId) {
+    delete consumers[subId][consumer];
   }
 
   function cancelSubscription(uint64 subId, address /*to*/ ) external {
@@ -158,7 +169,7 @@ contract VRFCoordinator is VRFCoordinatorV2Interface, IERC1363Receiver {
     return VRFCoordinator.onTransferReceived.selector;
   }
 
-  function verifyRandomProof(uint[4] memory proof, uint requestId) public {
+  function verifyRandomProof(uint[4] memory proof, uint requestId) internal {
     RequestDetails storage requestDetails = requests[requestId];
     if (requestDetails.fullfilled) {
       revert RandomRequestAlreadyFulfilled(requestId);

@@ -10,20 +10,23 @@ import {VRFCoordinatorV2Interface} from "@chainlink/v0.8/vrf/interfaces/VRFCoord
 
 abstract contract BaseGame is VRFConsumerBaseV2, Ownable(msg.sender) {
   bytes32 internal keyHash;
-  uint internal fee;
-  uint public randomResult;
-  VRFCoordinatorV2Interface public vrfCoordinator;
+  uint8 public minimumConfirmations;
+  uint32 public gasreq;
+  VRFCoordinatorV2Interface public coordinator;
   IERC1363 public feeToken;
 
-  uint64 chainlinkSubId;
+  uint64 public chainlinkSubId;
 
-  constructor(VRFCoordinatorV2Interface _VRFCoordinator, IERC1363 _feeToken, bytes32 _keyHash, uint _fee)
-    VRFConsumerBaseV2(address(_VRFCoordinator))
-  {
-    vrfCoordinator = _VRFCoordinator;
+  constructor(
+    VRFCoordinatorV2Interface _VRFCoordinator,
+    IERC1363 _feeToken,
+    uint8 _minimumConfirmations,
+    uint32 _gasreq
+  ) VRFConsumerBaseV2(address(_VRFCoordinator)) {
+    coordinator = _VRFCoordinator;
     feeToken = _feeToken;
-    keyHash = _keyHash;
-    fee = _fee;
+    minimumConfirmations = _minimumConfirmations;
+    gasreq = _gasreq;
   }
 
   modifier isInitialized() {
@@ -32,17 +35,15 @@ abstract contract BaseGame is VRFConsumerBaseV2, Ownable(msg.sender) {
   }
 
   function initialize() public onlyOwner {
-    chainlinkSubId = vrfCoordinator.createSubscription();
-    vrfCoordinator.addConsumer(chainlinkSubId, address(this));
+    chainlinkSubId = coordinator.createSubscription();
+    coordinator.addConsumer(chainlinkSubId, address(this));
   }
 
   function fundSubscription(uint amount) public onlyOwner {
-    feeToken.transferAndCall(address(vrfCoordinator), amount, abi.encode(chainlinkSubId));
+    feeToken.transferAndCall(address(coordinator), amount, abi.encode(chainlinkSubId));
   }
 
-  function getRandomNumber() public isInitialized returns (bytes32 requestId) {
-    revert("Not implemented");
-    // require(feeToken.balanceOf(address(this)) >= fee, "Not enough feeToken");
-    // return vrfCoordinator.requestRandomness(keyHash, fee);
+  function requestRandomNumber() internal isInitialized returns (uint) {
+    return coordinator.requestRandomWords(keyHash, chainlinkSubId, minimumConfirmations, gasreq, 1);
   }
 }

@@ -9,36 +9,39 @@ import "@openzeppelin/interfaces/IERC1363.sol";
 import {VRFCoordinator} from "../src/VRFCoordinator.sol";
 import {VRF} from "../src/VRF.sol";
 import {ERC1363Mock} from "./ERC1363Mock.sol";
+import {MockGame} from "./MockGame.sol";
 
 contract VRFCoordinatorTest is Test {
-  uint[2] publicKey = VRF.decodePoint(hex"032C8C31FC9F990C6B55E3865A184A4CE50E09481F2EAEB3E60EC1CEA13A6AE645");
+  uint[2] public publicKey = VRF.decodePoint(hex"032C8C31FC9F990C6B55E3865A184A4CE50E09481F2EAEB3E60EC1CEA13A6AE645");
 
-  VRFCoordinator coordinator;
-  IERC1363 feeToken;
-
-  uint64 subId;
+  VRFCoordinator public coordinator;
+  IERC1363 public feeToken;
+  uint64 public subId;
+  MockGame public mockGame;
 
   function setUp() public {
     feeToken = IERC1363(address(new ERC1363Mock("Test", "TST")));
     coordinator = new VRFCoordinator(publicKey, feeToken, 100);
+
+    mockGame = new MockGame(coordinator, feeToken, 1, 100_000);
   }
 
   function createSubscription() public {
     subId = coordinator.createSubscription();
   }
 
-  function addConsumer() public {
+  function addConsumer(address consumer) public {
     createSubscription();
-    coordinator.addConsumer(subId, address(this));
+    coordinator.addConsumer(subId, consumer);
   }
 
-  function test_createSubscription() public {
+  function testCreateSubscription() public {
     createSubscription();
     assert(subId == 1);
   }
 
-  function test_addConsumer() public {
-    addConsumer();
+  function testAddConsumer() public {
+    addConsumer(address(this));
 
     (uint96 balance, uint64 reqCount, address owner) = coordinator.subscriptions(subId);
     assert(owner == address(this));
@@ -47,11 +50,11 @@ contract VRFCoordinatorTest is Test {
   }
 
   function fundSubscription(uint amount) public {
-    addConsumer();
+    addConsumer(address(this));
     feeToken.transferAndCall(address(coordinator), amount, abi.encode(subId));
   }
 
-  function test_fund() public {
+  function testFund() public {
     uint amount = 1000;
     fundSubscription(amount);
     (uint96 balance,,) = coordinator.subscriptions(subId);
@@ -59,7 +62,7 @@ contract VRFCoordinatorTest is Test {
     assert(balance == amount);
   }
 
-  function test_randomWordsRequested() public {
+  function testRandomWordsRequested() public {
     fundSubscription(1000);
 
     vm.expectEmit();
@@ -86,5 +89,21 @@ contract VRFCoordinatorTest is Test {
     assert(fullfilled == false);
 
     console.logBytes(abi.encode(requestId));
+  }
+
+  function testMockGame() public {
+    deal(address(feeToken), address(mockGame), 1 ether);
+
+    mockGame.initialize();
+    mockGame.fundSubscription(0.5 ether);
+
+    uint requestId = mockGame.getRandom();
+
+    uint[4] memory proof = VRF.decodeProof(
+      hex"0252eef5f1c0d7d44f3e5f6c76b1641334f04513c6a9373b39b70ad85169f352ba5c63ea3d06b3900f1e2b19fb26b7aad43ff01d7962c4d4d5b3556cff839beb8637886f9b07d66f79ab37e15133a906c5"
+    );
+
+    coordinator.fullfillRandomness(proof, requestId);
+    assertNotEq(mockGame.randomValues(requestId), 0);
   }
 }
