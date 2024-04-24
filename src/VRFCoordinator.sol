@@ -20,7 +20,6 @@ contract VRFCoordinator is VRFCoordinatorV2Interface, IERC1363Receiver {
   error RandomRequestAlreadyFulfilled(uint requestId);
   error ProofInvalid();
   error RequestIdInvalid();
-  error CallReverted();
   error NotAConsumer();
   error SubscriptionInvalid();
   error minimumRequestConfirmationsToBig();
@@ -188,6 +187,7 @@ contract VRFCoordinator is VRFCoordinatorV2Interface, IERC1363Receiver {
   }
 
   function fullfillRandomness(uint[4] memory proof, uint requestId) public {
+    uint gasBeforeCall = gasleft();
     verifyRandomProof(proof, requestId);
 
     uint randomness = uint(keccak256(abi.encode(proof[0], proof[1])));
@@ -196,20 +196,16 @@ contract VRFCoordinator is VRFCoordinatorV2Interface, IERC1363Receiver {
 
     VRFConsumerBaseV2 requestor = VRFConsumerBaseV2(requests[requestId].request.sender);
 
-    uint gasBeforeCall = gasleft();
-    (bool success,) = Utils.controlledCall(
+    // call the user callback with their specified gas limit. Do not revert if the call revert.
+    Utils.controlledCall(
       address(requestor),
       requests[requestId].request.callbackGasLimit,
       abi.encodeCall(requestor.rawFulfillRandomWords, (requestId, array))
     );
-    uint gasSpent = gasBeforeCall - gasleft();
-
-    if (!success) {
-      revert CallReverted();
-    }
 
     Subscription storage sub = subscriptions[requests[requestId].request.subId];
 
+    uint gasSpent = gasBeforeCall - gasleft();
     sub.balance -= uint96(gasSpent * (gasPriceMwei * 10 ** 6)); // assuming feeToken is gasToken
   }
 }

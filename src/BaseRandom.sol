@@ -8,7 +8,7 @@ import "@chainlink/v0.8/vrf/VRFConsumerBaseV2.sol";
 
 import {VRFCoordinatorV2Interface} from "@chainlink/v0.8/vrf/interfaces/VRFCoordinatorV2Interface.sol";
 
-abstract contract BaseGame is VRFConsumerBaseV2, Ownable(msg.sender) {
+abstract contract BaseRandom is VRFConsumerBaseV2, Ownable(msg.sender) {
   bytes32 internal keyHash;
   uint8 public minimumConfirmations;
   uint32 public gasreq;

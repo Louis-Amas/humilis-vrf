@@ -2,9 +2,9 @@
 
 pragma solidity ^0.8.13;
 
-import "../src/BaseGame.sol";
+import "../src/BaseRandom.sol";
 
-contract MockGame is BaseGame {
+contract MockRandom is BaseRandom {
   mapping(uint => uint) public randomValues;
 
   constructor(
@@ -12,7 +12,7 @@ contract MockGame is BaseGame {
     IERC1363 _feeToken,
     uint8 _minimumConfirmations,
     uint32 _gasreq
-  ) BaseGame(_VRFCoordinator, _feeToken, _minimumConfirmations, _gasreq) {}
+  ) BaseRandom(_VRFCoordinator, _feeToken, _minimumConfirmations, _gasreq) {}
 
   function getRandom() public returns (uint) {
     return requestRandomNumber();

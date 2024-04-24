@@ -9,7 +9,7 @@ import "@openzeppelin/interfaces/IERC1363.sol";
 import {VRFCoordinator} from "../src/VRFCoordinator.sol";
 import {VRF} from "../src/VRF.sol";
 import {ERC1363Mock} from "./ERC1363Mock.sol";
-import {MockGame} from "./MockGame.sol";
+import {MockRandom} from "./MockRandom.sol";
 
 contract VRFCoordinatorTest is Test {
   uint[2] public publicKey = VRF.decodePoint(hex"032C8C31FC9F990C6B55E3865A184A4CE50E09481F2EAEB3E60EC1CEA13A6AE645");
@@ -17,13 +17,13 @@ contract VRFCoordinatorTest is Test {
   VRFCoordinator public coordinator;
   IERC1363 public feeToken;
   uint64 public subId;
-  MockGame public mockGame;
+  MockRandom public mockRandom;
 
   function setUp() public {
     feeToken = IERC1363(address(new ERC1363Mock("Test", "TST")));
     coordinator = new VRFCoordinator(publicKey, feeToken, 100);
 
-    mockGame = new MockGame(coordinator, feeToken, 1, 100_000);
+    mockRandom = new MockRandom(coordinator, feeToken, 1, 100_000);
   }
 
   function createSubscription() public {
@@ -91,19 +91,19 @@ contract VRFCoordinatorTest is Test {
     console.logBytes(abi.encode(requestId));
   }
 
-  function testMockGame() public {
-    deal(address(feeToken), address(mockGame), 1 ether);
+  function testMockRandom() public {
+    deal(address(feeToken), address(mockRandom), 1 ether);
 
-    mockGame.initialize();
-    mockGame.fundSubscription(0.5 ether);
+    mockRandom.initialize();
+    mockRandom.fundSubscription(0.5 ether);
 
-    uint requestId = mockGame.getRandom();
+    uint requestId = mockRandom.getRandom();
 
     uint[4] memory proof = VRF.decodeProof(
       hex"0252eef5f1c0d7d44f3e5f6c76b1641334f04513c6a9373b39b70ad85169f352ba5c63ea3d06b3900f1e2b19fb26b7aad43ff01d7962c4d4d5b3556cff839beb8637886f9b07d66f79ab37e15133a906c5"
     );
 
     coordinator.fullfillRandomness(proof, requestId);
-    assertNotEq(mockGame.randomValues(requestId), 0);
+    assertNotEq(mockRandom.randomValues(requestId), 0);
   }
 }
