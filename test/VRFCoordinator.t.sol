@@ -16,8 +16,8 @@ contract VRFCoordinatorTest is Test {
 
   VRFCoordinator public coordinator;
   IERC1363 public feeToken;
-  uint64 public subId;
   MockRandom public mockRandom;
+  uint64 public subId;
 
   function setUp() public {
     feeToken = IERC1363(address(new ERC1363Mock("Test", "TST")));
@@ -50,6 +50,7 @@ contract VRFCoordinatorTest is Test {
   }
 
   function fundSubscription(uint amount) public {
+    deal(address(feeToken), address(this), amount);
     addConsumer(address(this));
     feeToken.transferAndCall(address(coordinator), amount, abi.encode(subId));
   }
